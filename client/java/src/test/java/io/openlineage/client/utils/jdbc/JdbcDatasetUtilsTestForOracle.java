@@ -241,6 +241,49 @@ class JdbcDatasetUtilsTestForOracle {
   }
 
   @Test
+  void testGetDatasetIdentifierWithTnsFormatEnabledViaProperties() {
+    Properties properties = new Properties();
+    properties.setProperty("spark.openlineage.jdbc.oracle.tns.enabled", "true");
+
+    assertThat(
+            JdbcDatasetUtils.getDatasetIdentifier(
+                "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=hostname)(PORT=1521)))(CONNECT_DATA=(INSTANCE_NAME=ORCL)))",
+                "schema.table1",
+                properties))
+        .hasFieldOrPropertyWithValue("namespace", "oracle://hostname:1521")
+        .hasFieldOrPropertyWithValue("name", "ORCL.schema.table1");
+  }
+
+  @Test
+  void testGetDatasetIdentifierWithMultipleHostsInTnsFormatEnabled() {
+    Properties properties = new Properties();
+    properties.setProperty("spark.openlineage.jdbc.oracle.tns.enabled", "true");
+
+    // Addresses are lowercased, ordered, and the first is selected for the namespace
+    assertThat(
+            JdbcDatasetUtils.getDatasetIdentifier(
+                "jdbc:oracle:thin:@(DESCRIPTION= (ADDRESS_LIST= (LOAD_BALANCE=ON) (ADDRESS=(PROTOCOL=tcp)(HOST=salesserver2)(PORT=1522)) (ADDRESS=(PROTOCOL=tcp)(HOST=salesserver1)(PORT=1521))(ADDRESS=(PROTOCOL=tcp)(HOST=salesserver3)(PORT=1523)))(CONNECT_DATA=(SERVICE_NAME=sales.us.example.com)))",
+                "schema.table1",
+                properties))
+        .hasFieldOrPropertyWithValue("namespace", "oracle://salesserver1:1521")
+        .hasFieldOrPropertyWithValue("name", "sales.us.example.com.schema.table1");
+  }
+
+  @Test
+  void testGetDatasetIdentifierWithTnsFormatDisabledByDefault() {
+    // Without the flag, TNS parsing is disabled and the raw (sanitized) URL is kept
+    assertThat(
+            JdbcDatasetUtils.getDatasetIdentifier(
+                "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=hostname)(PORT=1521)))(CONNECT_DATA=(INSTANCE_NAME=ORCL)))",
+                "schema.table1",
+                new Properties()))
+        .hasFieldOrPropertyWithValue(
+            "namespace",
+            "oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=hostname)(PORT=1521)))(CONNECT_DATA=(INSTANCE_NAME=ORCL)))")
+        .hasFieldOrPropertyWithValue("name", "schema.table1");
+  }
+
+  @Test
   void testGetDatasetIdentifierWithLDAPFormat() {
     assertThat(
             JdbcDatasetUtils.getDatasetIdentifier(

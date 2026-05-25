@@ -21,6 +21,8 @@ public class OracleJdbcExtractor implements JdbcExtractor {
   private static final String URI_START = "^.*@(//)?";
   private static final String URI_END = "\\?.*$";
   private static final String PROTOCOL_PART = "^\\w+://";
+  private static final String TNS_ENABLED_PROPERTY = "spark.openlineage.jdbc.oracle.tns.enabled";
+  private static final String TNS_ENABLED_ENV = "SPARK_OPENLINEAGE_JDBC_ORACLE_TNS_ENABLED";
 
   @Override
   public boolean isDefinedAt(String jdbcUri) {
@@ -33,9 +35,23 @@ public class OracleJdbcExtractor implements JdbcExtractor {
     String uri = rawUri.replaceFirst(URI_START, "").replaceAll(URI_END, "");
 
     if (uri.contains("(")) {
+      if (isTnsEnabled(properties) && TnsParser.isTnsDescriptor(uri)) {
+        return extractUri(TnsParser.toEzConnect(uri), properties);
+      }
       throw new URISyntaxException(uri, "TNS format is unsupported for now");
     }
     return extractUri(uri, properties);
+  }
+
+  private boolean isTnsEnabled(Properties properties) {
+    String value = properties.getProperty(TNS_ENABLED_PROPERTY);
+    if (value == null) {
+      value = System.getProperty(TNS_ENABLED_PROPERTY);
+    }
+    if (value == null) {
+      value = System.getenv(TNS_ENABLED_ENV);
+    }
+    return Boolean.parseBoolean(value);
   }
 
   @SuppressWarnings("PMD")

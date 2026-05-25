@@ -5,3 +5,6 @@
 **/__pycache__
 **/airflow/logs
 **/events
+**/build
+**/.gradle
+.git

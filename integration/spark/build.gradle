@@ -41,6 +41,7 @@ dependencies {
     implementation(project(path: ":snowflake"))
     implementation(project(path: ":iceberg"))
     implementation(project(path: ":gcp"))
+    implementation("io.openlineage:transports-s3:${project.version}")
 }
 
 task sourceJar(type: Jar) {
@@ -153,7 +154,9 @@ nexusPublishing {
 }
 
 signing {
-    required { isReleaseVersion }
+    // Only require signing for release versions when a signing key is actually provided,
+    // so local/release-versioned builds work without GPG keys.
+    required { isReleaseVersion && findProperty("signingKey") != null }
     def signingKey = findProperty("signingKey")
     def signingPassword = findProperty("signingPassword")
     useInMemoryPgpKeys(signingKey, signingPassword)
@@ -175,6 +178,7 @@ shadowJar {
         exclude(project(path: ":snowflake"))
         exclude(project(path: ":iceberg"))
         exclude(project(path: ":gcp"))
+        exclude(dependency("io.openlineage:transports-s3:.*"))
     }
 
     dependencies {

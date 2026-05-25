@@ -39,6 +39,7 @@ dependencies {
     implementation(platform("software.amazon.awssdk:bom:${awssdkVersion}"))
     implementation("software.amazon.awssdk:auth:${awssdkVersion}")
     implementation("software.amazon.awssdk:s3:${awssdkVersion}")
+    implementation("software.amazon.awssdk:sts:${awssdkVersion}")
     implementation("software.amazon.awssdk:url-connection-client:${awssdkVersion}")
 
     testImplementation("com.adobe.testing:s3mock-testcontainers:${s3MockVersion}")

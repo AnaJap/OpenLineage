@@ -45,6 +45,8 @@ public class ArgumentParser {
       "spark.openlineage.jobName.appendDatasetName";
   public static final String SPARK_CONF_JOB_NAME_REPLACE_DOT_WITH_UNDERSCORE =
       "spark.openlineage.jobName.replaceDotWithUnderscore";
+  public static final String SPARK_CONF_JDBC_ORACLE_TNS_ENABLED =
+      "spark.openlineage.jdbc.oracle.tns.enabled";
 
   private static final String SPARK_TEST_EXTENSION_PROVIDER =
       "spark.openlineage.testExtensionProvider";
