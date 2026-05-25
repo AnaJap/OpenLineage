@@ -39,6 +39,10 @@ Building the image **runs the full build and test suite**. A successful
   (Docker Desktop → Settings → Resources → Memory.)
 - A network connection: the build downloads Gradle, the AWS SDK, Spark artifacts, and a
   Rust toolchain. The first build takes a while (Rust compilation + Spark modules).
+  Behind a **TLS-inspecting corporate proxy** the build still works: the code generator's
+  online schema-version check degrades to a warning if the cert can't be validated (see
+  Troubleshooting). The package/dependency downloads must still succeed, so the proxy must
+  allow Gradle, Maven Central, and crates.io / rustup.
 
 ## Build + test everything
 
@@ -110,3 +114,25 @@ These are toggled on the Spark job, not at build time.
 When a TNS descriptor lists multiple addresses (load balancing / failover), hosts are
 lowercased and ordered, and the first is used for the dataset namespace (a warning is
 logged), since a namespace can't contain commas.
+
+## Troubleshooting
+
+### `:generateCode` fails with `PKIX path building failed` / `SSLHandshakeException`
+
+Seen behind a TLS-inspecting corporate proxy. The code generator fetches each spec's
+published `$id` URL to verify the schema version, and the proxy presents a certificate
+signed by a CA the JDK doesn't trust. This fork already tolerates it — the check is
+skipped with a warning and code is generated from the local spec — so a fresh build should
+pass. If you still hit it (e.g. a different tool makes the call), the proper fix is to
+trust your org's root CA by importing it into the image's JDK truststore, e.g. add to the
+`Dockerfile` before the build steps:
+
+```dockerfile
+COPY corp-root-ca.crt /usr/local/share/ca-certificates/
+RUN keytool -importcert -noprompt -trustcacerts -alias corp-root-ca \
+    -file /usr/local/share/ca-certificates/corp-root-ca.crt \
+    -keystore "$JAVA_HOME/lib/security/cacerts" -storepass changeit
+```
+
+Note: setting `-Dhttps.proxyHost` alone does **not** fix this — it's a certificate-trust
+error, not a routing one.

@@ -63,6 +63,7 @@ Result: a single `openlineage-spark_2.12-<version>.jar` can be used with
 | File | Change |
 |---|---|
 | `integration/spark/spark3/.../iceberg/SnowflakeCatalogTypeHandler.java` | **Pre-existing compile bug.** It overrode `getIdentifier` returning a bare `DatasetIdentifier`, while the base class and all sibling handlers return `Optional<DatasetIdentifier>`. The Spark module would not compile until this was fixed (wrapped in `Optional`). Unrelated to the two features — fixed only because it blocked the build. |
+| `client/java/generator/.../client/Generator.java` | **Build robustness in restricted networks.** The code generator's `verifySchemaVersion` fetches each spec's `$id` URL to check the schema version was bumped. Behind a TLS-inspecting corporate proxy (untrusted CA) this threw `SSLHandshakeException` and failed the build. Broadened the catch to tolerate any `IOException`: the check is skipped with a warning, and code is still generated from the local spec. |
 | `client/java/build.gradle`, `client/java/transports.build.gradle`, `integration/spark/build.gradle`, `integration/sql/iface-java/build.gradle` | Relaxed signing: `required { isReleaseVersion }` → `required { isReleaseVersion && findProperty("signingKey") != null }`. Lets non-`SNAPSHOT` versions build/publish locally without GPG keys (signing still happens when a key is provided). |
 
 ### Version management
