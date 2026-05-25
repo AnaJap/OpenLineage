@@ -26,6 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 public final class TnsParser {
   private static final String DEFAULT_PORT = "1521";
 
+  private static final Pattern ADDRESS_PATTERN =
+      Pattern.compile("\\(\\s*ADDRESS\\s*=", Pattern.CASE_INSENSITIVE);
   private static final Pattern HOST_PATTERN =
       Pattern.compile("HOST\\s*=\\s*([^)\\s]+)", Pattern.CASE_INSENSITIVE);
   private static final Pattern PORT_PATTERN =
@@ -58,13 +60,15 @@ public final class TnsParser {
    * @throws URISyntaxException when no host can be extracted from the descriptor
    */
   public static String toEzConnect(String descriptor) throws URISyntaxException {
-    List<String> hosts = matchAll(HOST_PATTERN, descriptor);
-    if (hosts.isEmpty()) {
+    List<Address> addresses = extractAddresses(descriptor);
+    if (addresses.isEmpty()) {
+      addresses = extractGlobalAddresses(descriptor);
+    }
+    if (addresses.isEmpty()) {
       throw new URISyntaxException(descriptor, "No HOST found in TNS descriptor");
     }
 
-    List<String> ports = matchAll(PORT_PATTERN, descriptor);
-    String ezConnect = selectAddress(hosts, ports);
+    String ezConnect = selectAddress(addresses);
 
     String connectData = extractConnectData(descriptor);
     if (connectData != null) {
@@ -74,15 +78,13 @@ public final class TnsParser {
   }
 
   /**
-   * Pairs each host with its port (by declaration order), lowercases hosts, orders the addresses,
-   * and selects the first one. HOST and PORT appear in order within each {@code (ADDRESS=...)}, so
-   * the index-aligned pairing keeps a host with its own port.
+   * Lowercases hosts, orders the addresses, and selects the first one. HOST and PORT are extracted
+   * from the same {@code (ADDRESS=...)} block so missing ports do not shift later host/port pairs.
    */
-  private static String selectAddress(List<String> hosts, List<String> ports) {
+  private static String selectAddress(List<Address> parsedAddresses) {
     List<String> addresses = new ArrayList<>();
-    for (int i = 0; i < hosts.size(); i++) {
-      String port = i < ports.size() ? ports.get(i) : DEFAULT_PORT;
-      addresses.add(hosts.get(i).toLowerCase(Locale.ROOT) + ":" + port);
+    for (Address address : parsedAddresses) {
+      addresses.add(address.host.toLowerCase(Locale.ROOT) + ":" + address.port);
     }
     if (addresses.size() > 1) {
       addresses.sort(String::compareTo);
@@ -92,6 +94,52 @@ public final class TnsParser {
           addresses.get(0));
     }
     return addresses.get(0);
+  }
+
+  private static List<Address> extractAddresses(String descriptor) {
+    List<Address> addresses = new ArrayList<>();
+    Matcher matcher = ADDRESS_PATTERN.matcher(descriptor);
+    while (matcher.find()) {
+      int end = findMatchingParen(descriptor, matcher.start());
+      if (end < 0) {
+        continue;
+      }
+
+      String addressBlock = descriptor.substring(matcher.start(), end + 1);
+      Matcher host = HOST_PATTERN.matcher(addressBlock);
+      if (host.find()) {
+        Matcher port = PORT_PATTERN.matcher(addressBlock);
+        addresses.add(new Address(host.group(1), port.find() ? port.group(1) : DEFAULT_PORT));
+      }
+    }
+    return addresses;
+  }
+
+  private static List<Address> extractGlobalAddresses(String descriptor) {
+    List<String> hosts = matchAll(HOST_PATTERN, descriptor);
+    List<String> ports = matchAll(PORT_PATTERN, descriptor);
+    List<Address> addresses = new ArrayList<>();
+    for (int i = 0; i < hosts.size(); i++) {
+      String port = i < ports.size() ? ports.get(i) : DEFAULT_PORT;
+      addresses.add(new Address(hosts.get(i), port));
+    }
+    return addresses;
+  }
+
+  private static int findMatchingParen(String input, int openParenIndex) {
+    int depth = 0;
+    for (int i = openParenIndex; i < input.length(); i++) {
+      char c = input.charAt(i);
+      if (c == '(') {
+        depth++;
+      } else if (c == ')') {
+        depth--;
+        if (depth == 0) {
+          return i;
+        }
+      }
+    }
+    return -1;
   }
 
   private static String extractConnectData(String descriptor) {
@@ -117,5 +165,15 @@ public final class TnsParser {
       results.add(matcher.group(1));
     }
     return results;
+  }
+
+  private static final class Address {
+    private final String host;
+    private final String port;
+
+    private Address(String host, String port) {
+      this.host = host;
+      this.port = port;
+    }
   }
 }

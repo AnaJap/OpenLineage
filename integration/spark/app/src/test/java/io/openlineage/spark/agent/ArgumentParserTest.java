@@ -107,6 +107,18 @@ class ArgumentParserTest {
   }
 
   @Test
+  void testPropagatesOracleTnsFlagToJdbcExtractor() {
+    try {
+      System.clearProperty(ArgumentParser.SPARK_CONF_JDBC_ORACLE_TNS_ENABLED);
+      ArgumentParser.parse(
+          new SparkConf().set(ArgumentParser.SPARK_CONF_JDBC_ORACLE_TNS_ENABLED, "true"));
+      assertEquals("true", System.getProperty(ArgumentParser.SPARK_CONF_JDBC_ORACLE_TNS_ENABLED));
+    } finally {
+      System.clearProperty(ArgumentParser.SPARK_CONF_JDBC_ORACLE_TNS_ENABLED);
+    }
+  }
+
+  @Test
   @SuppressWarnings("ConstantConditions")
   void testConfToHttpConfig() {
     SparkConf sparkConf =

@@ -189,3 +189,8 @@ release-*
 website/.pnp.cjs
 website/.pnp.loader.mjs
 website/.yarn/**
+
+# Corporate CA certs dropped in for local Docker builds (do not commit the cert itself)
+certs/*.crt
+certs/*.pem
+certs/*.cer

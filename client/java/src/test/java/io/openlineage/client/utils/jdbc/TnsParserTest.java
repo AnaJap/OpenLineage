@@ -69,6 +69,18 @@ class TnsParserTest {
   }
 
   @Test
+  void keepsPortsAttachedToTheirAddressWhenSomePortsAreMissing() throws URISyntaxException {
+    String descriptor =
+        "(DESCRIPTION="
+            + "(ADDRESS_LIST="
+            + "(ADDRESS=(PROTOCOL=tcp)(HOST=SalesServer2))"
+            + "(ADDRESS=(PROTOCOL=tcp)(HOST=SalesServer1)(PORT=1528)))"
+            + "(CONNECT_DATA=(SERVICE_NAME=sales.us.example.com)))";
+    assertThat(TnsParser.toEzConnect(descriptor))
+        .isEqualTo("salesserver1:1528/sales.us.example.com");
+  }
+
+  @Test
   void throwsWhenNoHostPresent() {
     assertThatThrownBy(() -> TnsParser.toEzConnect("(DESCRIPTION=(CONNECT_DATA=(SID=ORCL)))"))
         .isInstanceOf(URISyntaxException.class);

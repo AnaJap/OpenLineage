@@ -58,6 +58,8 @@ public class ArgumentParser {
   private static final String separator = ";";
 
   public static SparkOpenLineageConfig parse(SparkConf conf) {
+    propagateOracleTnsFlag(conf);
+
     // TRY READING CONFIG FROM FILE
     Optional<SparkOpenLineageConfig> configFromFile = extractOpenLineageConfFromFile();
 
@@ -86,6 +88,11 @@ public class ArgumentParser {
 
     extractSparkSpecificConfigEntriesFromSparkConf(conf, targetConfig);
     return targetConfig;
+  }
+
+  private static void propagateOracleTnsFlag(SparkConf conf) {
+    findSparkConfigKey(conf, SPARK_CONF_JDBC_ORACLE_TNS_ENABLED)
+        .ifPresent(value -> System.setProperty(SPARK_CONF_JDBC_ORACLE_TNS_ENABLED, value));
   }
 
   private static Optional<SparkOpenLineageConfig> extractOpenLineageConfFromEnvVars() {

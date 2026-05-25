@@ -39,10 +39,6 @@ Building the image **runs the full build and test suite**. A successful
   (Docker Desktop → Settings → Resources → Memory.)
 - A network connection: the build downloads Gradle, the AWS SDK, Spark artifacts, and a
   Rust toolchain. The first build takes a while (Rust compilation + Spark modules).
-  Behind a **TLS-inspecting corporate proxy** the build still works: the code generator's
-  online schema-version check degrades to a warning if the cert can't be validated (see
-  Troubleshooting). The package/dependency downloads must still succeed, so the proxy must
-  allow Gradle, Maven Central, and crates.io / rustup.
 
 ## Build + test everything
 
@@ -57,7 +53,7 @@ means one of the steps failed — read the build log to see which.
 ## Changing the version
 
 The artifact version is controlled by a **single file**: [`VERSION`](VERSION) at the repo
-root (currently `1.48.0`). To change it, edit that file and rebuild:
+root. To change it, edit that file and rebuild:
 
 ```bash
 echo "1.48.0-mycorp" > VERSION
@@ -117,22 +113,26 @@ logged), since a namespace can't contain commas.
 
 ## Troubleshooting
 
-### `:generateCode` fails with `PKIX path building failed` / `SSLHandshakeException`
+### TLS / certificate errors behind a corporate proxy
 
-Seen behind a TLS-inspecting corporate proxy. The code generator fetches each spec's
-published `$id` URL to verify the schema version, and the proxy presents a certificate
-signed by a CA the JDK doesn't trust. This fork already tolerates it — the check is
-skipped with a warning and code is generated from the local spec — so a fresh build should
-pass. If you still hit it (e.g. a different tool makes the call), the proper fix is to
-trust your org's root CA by importing it into the image's JDK truststore, e.g. add to the
-`Dockerfile` before the build steps:
+Symptoms, all caused by a TLS-inspecting proxy whose root CA the build doesn't trust:
+- `curl: (60) ... self-signed certificate in certificate chain` (rustup install in
+  `compile.sh`, step 2).
+- `PKIX path building failed` / `SSLHandshakeException` (JVM HTTPS).
 
-```dockerfile
-COPY corp-root-ca.crt /usr/local/share/ca-certificates/
-RUN keytool -importcert -noprompt -trustcacerts -alias corp-root-ca \
-    -file /usr/local/share/ca-certificates/corp-root-ca.crt \
-    -keystore "$JAVA_HOME/lib/security/cacerts" -storepass changeit
+**Fix: provide your org's root CA.** Drop the CA file(s) into the [`certs/`](certs/) folder
+(`*.crt` / `*.pem`) and rebuild:
+
+```
+certs/corp-root-ca.crt
+docker build -t openlineage-fork .
 ```
 
-Note: setting `-Dhttps.proxyHost` alone does **not** fix this — it's a certificate-trust
-error, not a routing one.
+The Docker build imports everything in `certs/` into both the OS trust bundle (used by
+`curl` and `cargo`) and the JDK truststore. The actual cert files are git-ignored. See
+`certs/README.md` for how to obtain the cert.
+
+Notes:
+- The downloads themselves (rustup, crates.io, Gradle, Maven) must reach the network; the
+  CA only makes the proxy's interception **trusted**. Setting `-Dhttps.proxyHost` alone
+  does **not** help — this is a certificate-trust error, not a routing one.

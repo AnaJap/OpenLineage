@@ -107,13 +107,6 @@ public class Generator {
           }
         } catch (FileNotFoundException e) {
           logger.warn("This version of the spec is not published yet: " + idURL);
-        } catch (IOException e) {
-          // The published schema could not be fetched (e.g. no network access, or a
-          // TLS-inspecting corporate proxy whose CA the JVM does not trust). The version
-          // check is only a guard against forgetting to bump the schema version; code is
-          // generated from the local spec regardless, so degrade gracefully here.
-          logger.warn("Could not fetch published schema to verify version at " + idURL
-              + " (skipping check): " + e);
         }
         return idURL;
       }

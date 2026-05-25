@@ -16,8 +16,31 @@ FROM eclipse-temurin:17-jdk
 # openlineage-sql-java native library that the Spark integration depends on
 # (compile.sh installs the Rust toolchain via rustup if absent).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash git unzip curl build-essential \
+    && apt-get install -y --no-install-recommends bash git unzip curl build-essential ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Optional corporate-proxy CA trust. Behind a TLS-inspecting proxy, the downloads this
+# build performs (rustup via curl, cargo crate fetches, the JVM) fail with self-signed /
+# PKIX certificate errors. Drop your org's root CA file(s) into ./certs/ (*.crt / *.pem)
+# before building and they are trusted by the OS bundle (curl + cargo) and the JDK
+# truststore (keytool). If ./certs/ has no certs, this is a harmless no-op.
+COPY certs/ /usr/local/share/ca-certificates/extra/
+RUN set -e; \
+    found=0; \
+    for c in /usr/local/share/ca-certificates/extra/*.crt /usr/local/share/ca-certificates/extra/*.pem; do \
+      [ -e "$c" ] || continue; \
+      found=1; \
+      der="/usr/local/share/ca-certificates/extra/$(basename "$c" | sed 's/\.[^.]*$//').crt"; \
+      if [ "$c" != "$der" ]; then cp "$c" "$der"; fi; \
+      keytool -importcert -noprompt -trustcacerts -cacerts -storepass changeit \
+        -alias "corp-$(basename "$c")" -file "$c"; \
+    done; \
+    if [ "$found" = 1 ]; then update-ca-certificates; echo "Imported corporate CA cert(s)."; \
+    else echo "No corporate CA certs in ./certs/ — skipping (fine unless your proxy needs one)."; fi
+
+# Make curl and cargo use the (possibly CA-augmented) system trust bundle.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
 
 # Build as a non-root user. Some tests assert filesystem permission behavior
 # (e.g. a file marked non-writable should not be appended to) — root bypasses
