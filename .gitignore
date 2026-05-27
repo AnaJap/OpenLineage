@@ -194,3 +194,6 @@ website/.yarn/**
 certs/*.crt
 certs/*.pem
 certs/*.cer
+
+# Local-only Artifactory/JFrog sandbox for publish testing
+local-jfrog/

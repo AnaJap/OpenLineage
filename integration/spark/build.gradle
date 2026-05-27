@@ -3,6 +3,7 @@
 /* SPDX-License-Identifier: Apache-2.0
 */
 
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.apache.tools.ant.filters.ReplaceTokens
 
 plugins {
@@ -27,6 +28,59 @@ ext {
 
 final def archiveBaseName = "openlineage-spark_${scala}"
 final def activeRuntimeElementsConfiguration = "scala${scalaFmt}RuntimeElements"
+final def publishEnvFile = rootDir.toPath().resolve("../../.env").normalize().toFile()
+
+def publishEnv = [:]
+if (publishEnvFile.exists()) {
+    publishEnvFile.eachLine { rawLine ->
+        def line = rawLine.trim()
+        if (!line || line.startsWith("#") || !line.contains("=")) {
+            return
+        }
+
+        def separator = line.indexOf("=")
+        def key = line.substring(0, separator).trim()
+        def value = line.substring(separator + 1).trim()
+        if ((value.startsWith("\"") && value.endsWith("\"")) ||
+                (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.substring(1, value.length() - 1)
+        }
+        publishEnv[key] = value
+    }
+}
+
+def publishSetting = { String name, String defaultValue = null ->
+    def propertyName = name.toLowerCase(Locale.ROOT).replace("_", ".")
+    def value = System.getenv(name) ?: project.findProperty(propertyName) ?: publishEnv[name] ?: defaultValue
+    value?.toString()
+}
+
+def configuredMavenGroupId = publishSetting("MAVEN_GROUP_ID")
+def mavenGroupId = configuredMavenGroupId ?: project.group.toString()
+def mavenArtifactId = publishSetting("MAVEN_ARTIFACT_ID", archiveBaseName)
+def mavenPomName = publishSetting("MAVEN_POM_NAME", mavenArtifactId)
+def mavenPomDescription = publishSetting(
+        "MAVEN_POM_DESCRIPTION",
+        "OpenLineage Spark integration for Scala binary version ${scala}"
+)
+def mavenPomUrl = publishSetting("MAVEN_POM_URL")
+def mavenDeveloperId = publishSetting("MAVEN_DEVELOPER_ID")
+def mavenDeveloperName = publishSetting("MAVEN_DEVELOPER_NAME")
+def mavenLicenseName = publishSetting("MAVEN_LICENSE_NAME")
+def mavenLicenseUrl = publishSetting("MAVEN_LICENSE_URL")
+def mavenScmConnection = publishSetting("MAVEN_SCM_CONNECTION")
+def mavenScmDeveloperConnection = publishSetting("MAVEN_SCM_DEVELOPER_CONNECTION")
+def mavenScmUrl = publishSetting("MAVEN_SCM_URL")
+def jfrogRepositoryName = publishSetting("JFROG_REPOSITORY_NAME", "jfrog")
+def jfrogMavenUrl = publishSetting("JFROG_MAVEN_URL")
+def jfrogUsername = publishSetting("JFROG_USERNAME")
+def jfrogPassword = publishSetting("JFROG_PASSWORD") ?: publishSetting("JFROG_TOKEN")
+def jfrogAllowInsecureProtocol = publishSetting("JFROG_ALLOW_INSECURE_PROTOCOL", "false").toBoolean()
+def missingJfrogUrl = layout.buildDirectory.dir("missing-jfrog-url").map { it.asFile }.get()
+def sonatypeNexusUrl = publishSetting("SONATYPE_NEXUS_URL")
+def sonatypeSnapshotRepositoryUrl = publishSetting("SONATYPE_SNAPSHOT_REPOSITORY_URL")
+def releaseUsername = publishSetting("RELEASE_USERNAME")
+def releasePassword = publishSetting("RELEASE_PASSWORD")
 
 dependencies {
     implementation(project(path: ":app"))
@@ -90,37 +144,63 @@ tasks.withType(GenerateModuleMetadata.class).configureEach {
     enabled = false
 }
 
+def shadowJarTask = tasks.named("shadowJar", ShadowJar.class) {
+    archiveClassifier = ""
+}
+
 publishing {
     publications {
         mavenJava(MavenPublication) {
-            groupId = "io.openlineage"
-            artifactId = "openlineage-spark_${scala}"
+            groupId = mavenGroupId
+            artifactId = mavenArtifactId
 
-            from components.java
-
-            artifact sourceJar
-            artifact javadocJar
+            artifact(shadowJarTask) {
+                builtBy(shadowJarTask)
+            }
 
             pom {
-                name = "openlineage-spark_${scala}"
-                description = "OpenLineage Spark integration for Scala binary version ${scala}"
-                url = "https://github.com/OpenLineage/OpenLineage"
-                licenses {
-                    license {
-                        name = "The Apache License, Version 2.0"
-                        url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+                name = mavenPomName
+                description = mavenPomDescription
+
+                if (mavenPomUrl) {
+                    url = mavenPomUrl
+                }
+                if (mavenLicenseName || mavenLicenseUrl) {
+                    licenses {
+                        license {
+                            if (mavenLicenseName) {
+                                name = mavenLicenseName
+                            }
+                            if (mavenLicenseUrl) {
+                                url = mavenLicenseUrl
+                            }
+                        }
                     }
                 }
-                developers {
-                    developer {
-                        id = "openlineage"
-                        name = "OpenLineage Project"
+                if (mavenDeveloperId || mavenDeveloperName) {
+                    developers {
+                        developer {
+                            if (mavenDeveloperId) {
+                                id = mavenDeveloperId
+                            }
+                            if (mavenDeveloperName) {
+                                name = mavenDeveloperName
+                            }
+                        }
                     }
                 }
-                scm {
-                    connection = "scm:git:git://github.com/OpenLineage/OpenLineage.git"
-                    developerConnection = "scm:git:ssh://github.com:OpenLineage/OpenLineage.git"
-                    url = "https://github.com/OpenLineage/OpenLineage"
+                if (mavenScmConnection || mavenScmDeveloperConnection || mavenScmUrl) {
+                    scm {
+                        if (mavenScmConnection) {
+                            connection = mavenScmConnection
+                        }
+                        if (mavenScmDeveloperConnection) {
+                            developerConnection = mavenScmDeveloperConnection
+                        }
+                        if (mavenScmUrl) {
+                            url = mavenScmUrl
+                        }
+                    }
                 }
             }
 
@@ -139,16 +219,51 @@ publishing {
                 "version": project.property("version")
         ]
     }
+
+    repositories {
+        maven {
+            name = jfrogRepositoryName
+            url = uri(jfrogMavenUrl ?: missingJfrogUrl)
+            allowInsecureProtocol = jfrogAllowInsecureProtocol
+            credentials {
+                username = jfrogUsername ?: ""
+                password = jfrogPassword ?: ""
+            }
+        }
+    }
 }
 
+tasks.withType(org.gradle.api.publish.maven.tasks.PublishToMavenRepository).configureEach {
+    if (publication == publishing.publications.mavenJava && repository.name == jfrogRepositoryName) {
+        dependsOn(shadowJarTask)
+        doFirst {
+            [
+                    "MAVEN_GROUP_ID"   : configuredMavenGroupId,
+                    "JFROG_MAVEN_URL"  : jfrogMavenUrl,
+                    "JFROG_USERNAME"   : jfrogUsername,
+                    "JFROG_PASSWORD or JFROG_TOKEN": jfrogPassword
+            ].findAll { it.value == null || it.value.trim().isEmpty() }.each {
+                throw new GradleException("Missing publish configuration: ${it.key}. Set it in the environment or repo-root .env file.")
+            }
+        }
+    }
+}
+
+tasks.withType(org.gradle.plugins.signing.Sign).configureEach {
+    dependsOn(shadowJarTask)
+}
 
 nexusPublishing {
     repositories {
         sonatype {
-            nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
-            snapshotRepositoryUrl.set(uri("https://central.sonatype.com/repository/maven-snapshots/"))
-            username = System.getenv('RELEASE_USERNAME')
-            password = System.getenv('RELEASE_PASSWORD')
+            if (sonatypeNexusUrl) {
+                nexusUrl.set(uri(sonatypeNexusUrl))
+            }
+            if (sonatypeSnapshotRepositoryUrl) {
+                snapshotRepositoryUrl.set(uri(sonatypeSnapshotRepositoryUrl))
+            }
+            username = releaseUsername
+            password = releasePassword
         }
     }
 }
@@ -164,8 +279,6 @@ signing {
 }
 
 shadowJar {
-    archiveClassifier = ""
-
     minimize() {
         exclude(project(path: ":app"))
         exclude(project(path: ":shared", configuration: activeRuntimeElementsConfiguration))

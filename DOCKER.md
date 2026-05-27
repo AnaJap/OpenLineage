@@ -95,6 +95,60 @@ docker rm ol
 ls ./out   # openlineage-spark_2.12-1.48.0.jar  (matches the VERSION file)
 ```
 
+## Publish to JFrog
+
+The Spark fat JAR publishes as a Maven artifact:
+
+```text
+${MAVEN_GROUP_ID}:${MAVEN_ARTIFACT_ID}:<VERSION>
+```
+
+Publish configuration is read from environment variables or from the repo-root `.env`
+file. Environment variables take precedence over `.env`.
+
+Start from the template:
+
+```bash
+cp .env.example .env
+```
+
+Required publish variables:
+
+```bash
+export MAVEN_GROUP_ID="ge.myorg"
+export MAVEN_ARTIFACT_ID="openlineage-spark_2.12"
+export JFROG_REPOSITORY_NAME="jfrog"
+export JFROG_MAVEN_URL="<artifactory-maven-deploy-url>"
+# Required by Gradle only when JFROG_MAVEN_URL uses http:// instead of https://.
+export JFROG_ALLOW_INSECURE_PROTOCOL="true"
+export JFROG_USERNAME="<username>"
+export JFROG_PASSWORD="<password-or-api-key>"
+# or use JFROG_TOKEN instead of JFROG_PASSWORD
+```
+
+From a local Gradle environment, publish with:
+
+```bash
+cd integration/spark
+./gradlew publishMavenJavaPublicationToJfrogRepository
+```
+
+From the Docker build image, build/test first, then publish explicitly:
+
+```bash
+docker build -t openlineage-fork .
+docker run --rm \
+  --env-file .env \
+  openlineage-fork \
+  bash -lc 'cd integration/spark && ./gradlew publishMavenJavaPublicationToJfrogRepository'
+```
+
+The artifact should appear under:
+
+```text
+<repo-key>/<MAVEN_GROUP_ID with dots as slashes>/<MAVEN_ARTIFACT_ID>/<VERSION>/
+```
+
 ## Using the features at runtime
 
 These are toggled on the Spark job, not at build time.

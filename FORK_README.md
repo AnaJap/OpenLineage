@@ -53,7 +53,7 @@ ordered, and the first is selected, with a warning logged about the dropped addr
 | File | Change |
 |---|---|
 | `client/java/transports-s3/build.gradle` | Added `software.amazon.awssdk:sts` so STS is relocated into the `io.openlineage.client.shaded` namespace by the existing shading rule. |
-| `integration/spark/build.gradle` | Added `io.openlineage:transports-s3` as a dependency and excluded it from `shadowJar { minimize() }` so its `ServiceLoader`-discovered classes survive optimization. The existing `software.amazon` relocation + `mergeServiceFiles()` cover the rest. |
+| `integration/spark/build.gradle` | Added `io.openlineage:transports-s3` as a dependency and excluded it from `shadowJar { minimize() }` so its `ServiceLoader`-discovered classes survive optimization. The existing `software.amazon` relocation + `mergeServiceFiles()` cover the rest. It also publishes the Spark `shadowJar` as the Maven artifact and reads publish coordinates, repository URL, repository name, credentials, and optional POM metadata from environment variables or a repo-root `.env` file. |
 
 Result: a single `openlineage-spark_2.12-<version>.jar` can be used with
 `spark.openlineage.transport.type=s3`.
@@ -76,8 +76,10 @@ Result: a single `openlineage-spark_2.12-<version>.jar` can be used with
 | File | Change |
 |---|---|
 | `Dockerfile` *(new)* | Self-contained JDK 17 build image. Building it runs the whole pipeline as a pass/fail gate: client tests → publish client + `transports-s3` (shaded STS) to mavenLocal → build the Rust `openlineage-sql-java` dependency → build the Spark shadow JAR → assert STS is shaded in and the S3 transport is registered. |
-| `DOCKER.md` *(new)* | How to build, test, change the version, get a shell, and extract the JAR. |
-| `.dockerignore` | Excludes host build outputs / caches / `.git` from the build context. |
+| `DOCKER.md` *(new)* | How to build, test, change the version, get a shell, extract the JAR, and publish the Spark artifact to JFrog using env-driven configuration. |
+| `.env.example` *(new)* | Template for Maven coordinates, JFrog repository settings, credentials placeholders, and optional POM metadata. Copy to `.env` for local publishing. |
+| `.gitignore` | Ignores local secrets/config such as `.env` and the local JFrog sandbox. |
+| `.dockerignore` | Excludes host build outputs / caches / `.git` / `.env` from the build context so secrets are not baked into Docker images. |
 
 ---
 
@@ -90,3 +92,44 @@ docker build -t openlineage-fork .
 A green build means all tests passed and the JAR contains shaded STS + the S3 transport.
 Full instructions (version changes, extracting the JAR, runtime flags) are in
 [DOCKER.md](DOCKER.md).
+
+## Publishing
+
+Publishing is explicit and separate from `docker build`. The build image is the quality
+gate; publishing runs afterward from a local Gradle environment or from the finished image.
+
+Create local publish config from the template:
+
+```bash
+cp .env.example .env
+```
+
+Required variables:
+
+```bash
+MAVEN_GROUP_ID=<maven-group-id>
+MAVEN_ARTIFACT_ID=openlineage-spark_2.12
+JFROG_REPOSITORY_NAME=jfrog
+JFROG_MAVEN_URL=<artifactory-maven-deploy-url>
+# Required by Gradle only when JFROG_MAVEN_URL uses http:// instead of https://.
+JFROG_ALLOW_INSECURE_PROTOCOL=true
+JFROG_USERNAME=<username>
+JFROG_PASSWORD=<password-or-api-key>
+# or JFROG_TOKEN=<token>
+```
+
+Publish with the Gradle task generated from `JFROG_REPOSITORY_NAME`. With
+`JFROG_REPOSITORY_NAME=jfrog`:
+
+```bash
+cd integration/spark
+./gradlew publishMavenJavaPublicationToJfrogRepository
+```
+
+From Docker:
+
+```bash
+docker build -t openlineage-fork .
+docker run --rm --env-file .env openlineage-fork \
+  bash -lc 'cd integration/spark && ./gradlew publishMavenJavaPublicationToJfrogRepository'
+```
